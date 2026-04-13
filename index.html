@@ -76,7 +76,7 @@
       -webkit-font-smoothing:antialiased;
       -moz-osx-font-smoothing:grayscale;
       text-rendering:optimizeLegibility;
-      overscroll-behavior-x:none;
+      overscroll-behavior:none;
     }
 
     button,
@@ -820,6 +820,7 @@
       loginSeq: 0,
       refreshSeq: 0,
       actionLocks: {},
+      hasRenderedHome: false,
     };
 
     const els = {
@@ -1008,7 +1009,7 @@
 
     function updatePlanCard(plan) {
       const card = els.plansList.querySelector(`[data-plan-card="${CSS.escape(plan)}"]`);
-      if (!card) return renderHome();
+      if (!card) return renderHome(true);
 
       const bal = Number(state.saldo[plan] || 0);
       const balInfo = state.saldoEstado?.[plan] || {
@@ -1114,6 +1115,14 @@
       }
     }
 
+    function ensureHomeVisible() {
+      if (!state.hasRenderedHome) {
+        setScreen("home");
+        startPolling();
+        state.hasRenderedHome = true;
+      }
+    }
+
     function openModal(title, bodyHtml) {
       els.modalTitle.textContent = title;
       els.modalBody.innerHTML = bodyHtml;
@@ -1147,7 +1156,7 @@
       return "";
     }
 
-    function renderHome() {
+    function renderHome(forceFull = false) {
       els.hdrTitle.textContent = "Recursos";
       els.hdrSub.textContent = `Ruta ${state.ruta || "—"}`;
       els.lblRuta.textContent = state.ruta || "—";
@@ -1159,12 +1168,30 @@
       els.btnLogout.style.display = "inline-flex";
 
       const plans = Object.keys(state.saldo || {}).sort();
-      els.plansList.innerHTML = "";
+      const existingCards = Array.from(els.plansList.querySelectorAll("[data-plan-card]"));
+      const existingNames = existingCards.map(card => card.getAttribute("data-plan-card")).sort();
 
       if (!plans.length) {
-        els.plansList.innerHTML = `<div class="help">No se encontraron planes en el saldo. Revisa los headers en Google Sheets.</div>`;
+        const emptyHtml = `<div class="help">No se encontraron planes en el saldo. Revisa los headers en Google Sheets.</div>`;
+        if (els.plansList.innerHTML !== emptyHtml) {
+          els.plansList.innerHTML = emptyHtml;
+        }
+        setBadge((state.pendientes || []).length);
         return;
       }
+
+      const sameStructure =
+        !forceFull &&
+        existingNames.length === plans.length &&
+        existingNames.every((name, i) => name === plans[i]);
+
+      if (sameStructure) {
+        plans.forEach(plan => updatePlanCard(plan));
+        setBadge((state.pendientes || []).length);
+        return;
+      }
+
+      els.plansList.innerHTML = "";
 
       plans.forEach((plan) => {
         const bal = Number(state.saldo[plan] || 0);
@@ -1206,6 +1233,8 @@
       if (!r) return showToast("Escribe la ruta");
 
       const requestId = ++state.loginSeq;
+      state.hasRenderedHome = false;
+
       const cached = loadCache(r);
       if (cached && cached.saldo) {
         state.ruta = String(cached.ruta || r);
@@ -1217,21 +1246,22 @@
         state.history = (cached.history || []);
         state.pendingSaldoWrites = {};
         state.lastUpdated = cached.lastUpdated ? new Date(cached.lastUpdated) : new Date();
-        setScreen("home");
-        renderHome();
-        startPolling();
+
+        renderHome(true);
+        ensureHomeVisible();
         showToast("Cargando datos…", FAST_TOAST_MS);
       } else {
         state.ruta = r;
+        state.peso = null;
         state.saldo = {};
         state.saldoEstado = {};
         state.pendientes = [];
         state.history = [];
         state.pendingSaldoWrites = {};
-        state.lastUpdated = new Date();
-        setScreen("home");
-        renderHome();
-        startPolling();
+        state.lastUpdated = null;
+
+        renderHome(true);
+        ensureHomeVisible();
         showToast("Conectando…", FAST_TOAST_MS);
       }
 
@@ -1250,9 +1280,8 @@
 
         localStorage.setItem("ruta_id", state.ruta);
         saveCacheNow();
-        setScreen("home");
-        renderHome();
-        startPolling();
+        renderHome(false);
+        ensureHomeVisible();
         showToast("Listo", FAST_TOAST_MS);
       } catch(e) {
         console.error("LOGIN ERROR:", e);
@@ -1331,6 +1360,7 @@
       state.history = [];
       state.pendingSaldoWrites = {};
       state.lastUpdated = null;
+      state.hasRenderedHome = false;
       localStorage.removeItem("ruta_id");
 
       els.btnHistory.style.display = "none";
