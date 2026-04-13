@@ -234,23 +234,8 @@
       padding:14px;
     }
 
-    .screen{
-      display:none;
-      opacity:0;
-      transform:translateY(6px);
-      will-change:opacity, transform;
-    }
-    .screen.active{
-      display:block;
-      opacity:1;
-      transform:none;
-      animation:screenIn .22s ease;
-    }
-
-    @keyframes screenIn{
-      from{ opacity:0; transform:translateY(8px); }
-      to{ opacity:1; transform:none; }
-    }
+    .screen{ display:none; }
+    .screen.active{ display:block; }
 
     .loginWrap{
       margin-top:14vh;
@@ -424,9 +409,7 @@
       border-radius:18px;
       background:var(--white-94);
       box-shadow:var(--shadow-card);
-      transition:transform .12s ease, box-shadow .12s ease, opacity .18s ease;
-      contain:layout paint style;
-      min-height:106px;
+      transition:transform .12s ease, box-shadow .12s ease;
     }
 
     .plan:active{
@@ -517,7 +500,7 @@
       left:50%;
       bottom:calc(20px + env(safe-area-inset-bottom));
       z-index:99;
-      display:block;
+      display:none;
       width:min(520px, calc(100% - 28px));
       padding:12px 14px;
       border:1px solid var(--line);
@@ -525,10 +508,7 @@
       background:rgba(255,255,255,.86);
       color:rgba(11,18,32,.86);
       font-size:13px;
-      opacity:0;
-      pointer-events:none;
-      transform:translateX(-50%) translateY(10px);
-      transition:opacity .18s ease, transform .18s ease;
+      transform:translateX(-50%);
       backdrop-filter:blur(16px) saturate(140%);
       -webkit-backdrop-filter:blur(16px) saturate(140%);
       box-shadow:0 18px 40px rgba(0,0,0,.10);
@@ -543,8 +523,6 @@
       justify-content:center;
       padding:12px;
       background:rgba(11,18,32,.36);
-      opacity:0;
-      transition:opacity .18s ease;
     }
 
     .modal{
@@ -555,8 +533,6 @@
       backdrop-filter:blur(18px) saturate(150%);
       -webkit-backdrop-filter:blur(18px) saturate(150%);
       box-shadow:0 30px 80px rgba(0,0,0,.16);
-      transform:translateY(12px);
-      transition:transform .18s ease;
     }
 
     .modalHead{
@@ -688,19 +664,6 @@
     .modalBack.is-open,
     .toast.is-visible{
       content-visibility:auto;
-    }
-
-    .toast.is-visible{
-      opacity:1;
-      transform:translateX(-50%) translateY(0);
-    }
-
-    .modalBack.is-open{
-      opacity:1;
-    }
-
-    .modalBack.is-open .modal{
-      transform:translateY(0);
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -857,10 +820,6 @@
       loginSeq: 0,
       refreshSeq: 0,
       actionLocks: {},
-      renderSignature: "",
-      framePending: false,
-      refreshInFlight: false,
-      lastNotifCount: 0,
     };
 
     const els = {
@@ -940,11 +899,9 @@
 
     function showToast(msg, ms = 2600) {
       els.toast.textContent = msg;
-      els.toast.classList.add("is-visible");
+      els.toast.style.display = "block";
       clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => {
-        els.toast.classList.remove("is-visible");
-      }, ms);
+      showToast._t = setTimeout(() => els.toast.style.display = "none", ms);
     }
 
     function cacheKey(ruta){ return `cache_${ruta}`; }
@@ -1051,7 +1008,7 @@
 
     function updatePlanCard(plan) {
       const card = els.plansList.querySelector(`[data-plan-card="${CSS.escape(plan)}"]`);
-      if (!card) return scheduleRenderHome(true);
+      if (!card) return renderHome();
 
       const bal = Number(state.saldo[plan] || 0);
       const balInfo = state.saldoEstado?.[plan] || {
@@ -1131,17 +1088,10 @@
     }
 
     function setScreen(name) {
-      const nextLogin = name === "login";
-      const nextHome = name === "home";
-
-      els.screenLogin.classList.toggle("active", nextLogin);
-      els.screenHome.classList.toggle("active", nextHome);
-
-      if (nextLogin) {
-        requestAnimationFrame(() => {
-          els.inpRuta?.focus({ preventScroll: true });
-        });
-      }
+      els.screenLogin.classList.remove("active");
+      els.screenHome.classList.remove("active");
+      if (name === "login") els.screenLogin.classList.add("active");
+      if (name === "home") els.screenHome.classList.add("active");
     }
 
     function fmtTime(d) {
@@ -1156,7 +1106,6 @@
 
     function setBadge(n) {
       const count = Number(n || 0);
-      state.lastNotifCount = count;
       if (count > 0) {
         els.bellBadge.style.display = "inline-block";
         els.bellBadge.textContent = count > 99 ? "99+" : String(count);
@@ -1169,18 +1118,11 @@
       els.modalTitle.textContent = title;
       els.modalBody.innerHTML = bodyHtml;
       els.modalBack.style.display = "flex";
-      requestAnimationFrame(() => els.modalBack.classList.add("is-open"));
     }
     function closeModal() {
-      els.modalBack.classList.remove("is-open");
-      const clear = () => {
-        if (els.modalBack.classList.contains("is-open")) return;
-        els.modalBack.style.display = "none";
-        els.modalTitle.textContent = "—";
-        els.modalBody.innerHTML = "";
-      };
-      clearTimeout(closeModal._t);
-      closeModal._t = setTimeout(clear, 180);
+      els.modalBack.style.display = "none";
+      els.modalTitle.textContent = "—";
+      els.modalBody.innerHTML = "";
     }
 
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -1205,135 +1147,58 @@
       return "";
     }
 
-    function renderSignature() {
-      const plans = Object.keys(state.saldo || {}).sort();
-      return JSON.stringify({
-        ruta: state.ruta || "",
-        peso: state.peso ?? "",
-        plans,
-        valores: plans.map(plan => Number(state.saldo?.[plan] || 0)),
-        negativos: plans.map(plan => !!state.saldoEstado?.[plan]?.negativo)
-      });
-    }
-
-    function scheduleRenderHome(force = false) {
-      const nextSignature = renderSignature();
-      if (!force && nextSignature === state.renderSignature) {
-        setBadge((state.pendientes || []).length);
-        els.lblUpdated.textContent = state.lastUpdated ? fmtTime(state.lastUpdated) : "—";
-        return;
-      }
-      state.renderSignature = nextSignature;
-      if (state.framePending && !force) return;
-      state.framePending = true;
-      requestAnimationFrame(() => {
-        state.framePending = false;
-        renderHome(force);
-      });
-    }
-
-    function updateHeaderShell() {
+    function renderHome() {
       els.hdrTitle.textContent = "Recursos";
       els.hdrSub.textContent = `Ruta ${state.ruta || "—"}`;
       els.lblRuta.textContent = state.ruta || "—";
       els.lblPeso.textContent = `PESO ${state.peso ?? "—"}%`;
       els.lblUpdated.textContent = state.lastUpdated ? fmtTime(state.lastUpdated) : "—";
+
       els.btnHistory.style.display = "inline-flex";
       els.btnBell.style.display = "inline-flex";
       els.btnLogout.style.display = "inline-flex";
-      setBadge((state.pendientes || []).length);
-    }
 
-    function ensurePlanCard(plan) {
-      let card = els.plansList.querySelector(`[data-plan-card="${CSS.escape(plan)}"]`);
-      if (card) return card;
-
-      card = document.createElement("div");
-      card.className = "plan";
-      card.setAttribute("data-plan-card", plan);
-      card.innerHTML = `
-        <div class="planTop">
-          <div>
-            <div class="planName"></div>
-            <div class="muted" style="font-size:12px; margin-top:4px;">Disponible</div>
-          </div>
-          <div class="planBal"><small>u</small></div>
-        </div>
-        <div class="planActions">
-          <button class="mini" data-act="use">Agregar uso</button>
-          <button class="mini primary" data-act="transfer">Transferir</button>
-        </div>
-      `;
-      els.plansList.appendChild(card);
-      return card;
-    }
-
-    function syncPlanCard(plan) {
-      const card = ensurePlanCard(plan);
-      const bal = Number(state.saldo[plan] || 0);
-      const balInfo = state.saldoEstado?.[plan] || {
-        valor: bal,
-        negativo: bal < 0,
-        color: bal < 0 ? "red" : "normal"
-      };
-
-      const nameEl = card.querySelector(".planName");
-      if (nameEl.textContent !== plan) nameEl.textContent = plan;
-
-      card.querySelectorAll("[data-plan]").forEach(btn => {
-        if (btn.getAttribute("data-plan") !== plan) btn.setAttribute("data-plan", plan);
-      });
-
-      const balEl = card.querySelector(".planBal");
-      const nextHtml = `${bal}<small>u</small>`;
-      if (balEl.innerHTML !== nextHtml) balEl.innerHTML = nextHtml;
-      balEl.classList.toggle("negative", !!balInfo.negativo);
-
-      let negEl = card.querySelector(".negInfo");
-      if (balInfo.negativo) {
-        if (!negEl) {
-          negEl = document.createElement("div");
-          negEl.className = "negInfo";
-          card.querySelector(".planTop > div").appendChild(negEl);
-        }
-        const nextText = `Sobregiro: ${Math.abs(bal)} u`;
-        if (negEl.textContent !== nextText) negEl.textContent = nextText;
-      } else if (negEl) {
-        negEl.remove();
-      }
-    }
-
-    function syncPlansList() {
       const plans = Object.keys(state.saldo || {}).sort();
+      els.plansList.innerHTML = "";
 
       if (!plans.length) {
-        if (!els.plansList.dataset.empty) {
-          els.plansList.innerHTML = `<div class="help">No se encontraron planes en el saldo. Revisa los headers en Google Sheets.</div>`;
-          els.plansList.dataset.empty = "1";
-        }
+        els.plansList.innerHTML = `<div class="help">No se encontraron planes en el saldo. Revisa los headers en Google Sheets.</div>`;
         return;
       }
 
-      if (els.plansList.dataset.empty) {
-        els.plansList.innerHTML = "";
-        delete els.plansList.dataset.empty;
-      }
+      plans.forEach((plan) => {
+        const bal = Number(state.saldo[plan] || 0);
+        const balInfo = state.saldoEstado?.[plan] || {
+          valor: bal,
+          negativo: bal < 0,
+          color: bal < 0 ? "red" : "normal"
+        };
+        const negativeClass = balInfo.negativo ? "negative" : "";
+        const negInfoHtml = balInfo.negativo
+          ? `<div class="negInfo">Sobregiro: ${Math.abs(bal)} u</div>`
+          : "";
 
-      const existing = new Set(Array.from(els.plansList.querySelectorAll("[data-plan-card]")).map(el => el.getAttribute("data-plan-card")));
-      plans.forEach(plan => {
-        syncPlanCard(plan);
-        existing.delete(plan);
+        const div = document.createElement("div");
+        div.className = "plan";
+        div.setAttribute("data-plan-card", plan);
+        div.innerHTML = `
+          <div class="planTop">
+            <div>
+              <div class="planName">${escapeHtml(plan)}</div>
+              <div class="muted" style="font-size:12px; margin-top:4px;">Disponible</div>
+              ${negInfoHtml}
+            </div>
+            <div class="planBal ${negativeClass}">${bal}<small>u</small></div>
+          </div>
+          <div class="planActions">
+            <button class="mini" data-act="use" data-plan="${escapeAttr(plan)}">Agregar uso</button>
+            <button class="mini primary" data-act="transfer" data-plan="${escapeAttr(plan)}">Transferir</button>
+          </div>
+        `;
+        els.plansList.appendChild(div);
       });
 
-      existing.forEach(plan => {
-        const node = els.plansList.querySelector(`[data-plan-card="${CSS.escape(plan)}"]`);
-        if (node) node.remove();
-      });
-    }
-
-    function renderHome(force = false) {
-      updateHeaderShell();
-      syncPlansList();
+      setBadge((state.pendientes || []).length);
     }
 
     async function login(ruta) {
@@ -1353,7 +1218,7 @@
         state.pendingSaldoWrites = {};
         state.lastUpdated = cached.lastUpdated ? new Date(cached.lastUpdated) : new Date();
         setScreen("home");
-        scheduleRenderHome(true);
+        renderHome();
         startPolling();
         showToast("Cargando datos…", FAST_TOAST_MS);
       } else {
@@ -1365,7 +1230,7 @@
         state.pendingSaldoWrites = {};
         state.lastUpdated = new Date();
         setScreen("home");
-        scheduleRenderHome(true);
+        renderHome();
         startPolling();
         showToast("Conectando…", FAST_TOAST_MS);
       }
@@ -1386,7 +1251,7 @@
         localStorage.setItem("ruta_id", state.ruta);
         saveCacheNow();
         setScreen("home");
-        scheduleRenderHome(true);
+        renderHome();
         startPolling();
         showToast("Listo", FAST_TOAST_MS);
       } catch(e) {
@@ -1401,39 +1266,30 @@
     }
 
     async function refreshSaldoFull() {
-      if (!state.ruta || state.refreshInFlight) return;
-      state.refreshInFlight = true;
+      if (!state.ruta) return;
 
-      try {
-        const requestId = ++state.refreshSeq;
-        const rutaSnapshot = state.ruta;
-        const data = await apiCallDedup(`refresh:${rutaSnapshot}`, { action:"login", ruta: rutaSnapshot });
-        if (requestId !== state.refreshSeq || rutaSnapshot !== state.ruta) return;
+      const requestId = ++state.refreshSeq;
+      const rutaSnapshot = state.ruta;
+      const data = await apiCallDedup(`refresh:${rutaSnapshot}`, { action:"login", ruta: rutaSnapshot });
+      if (requestId !== state.refreshSeq || rutaSnapshot !== state.ruta) return;
 
-        state.peso = (data.peso ?? state.peso);
-        mergeServerSaldo(data.saldo || state.saldo || {});
-        state.saldoEstado = (data.saldo_estado || {});
-        if (!Object.keys(state.saldoEstado).length) rebuildSaldoEstadoFromSaldo();
-        state.pendientes = (data.pendientes || []);
-        state.history = (data.history || state.history || []);
-        state.lastUpdated = new Date();
-        scheduleRenderHome();
-        saveCache();
-      } finally {
-        state.refreshInFlight = false;
-      }
+      state.peso = (data.peso ?? state.peso);
+      mergeServerSaldo(data.saldo || state.saldo || {});
+      state.saldoEstado = (data.saldo_estado || {});
+      if (!Object.keys(state.saldoEstado).length) rebuildSaldoEstadoFromSaldo();
+      state.pendientes = (data.pendientes || []);
+      state.history = (data.history || state.history || []);
+      state.lastUpdated = new Date();
+      renderHome();
+      saveCache();
     }
 
     async function refreshNotificationsOnly() {
       if (!state.ruta) return;
       const data = await apiCallDedup(`notif:${state.ruta}`, { action:"notifications", ruta: state.ruta });
       state.pendientes = data.pendientes || [];
-      const nextCount = state.pendientes.length;
-      if (nextCount !== state.lastNotifCount) {
-        state.lastNotifCount = nextCount;
-        setBadge(nextCount);
-        saveCache();
-      }
+      setBadge(state.pendientes.length);
+      saveCache();
     }
 
     async function refreshHistory() {
